@@ -34,7 +34,7 @@ Optional:
 
 -p/--protein_file <filename>  to output protein sequences for these retained transcripts.
 
--F/--filtered_gene <filename>   to output all genes which don¡¯t have any transcript finally retained by dbHT-Trans-Extractor. This function is only available when the match list between transcript name and gene name was provided.
+-F/--filtered_gene <filename>   to output all genes which do not have any transcript finally retained by dbHT-Trans-Extractor. This function is only available when the match list between transcript name and gene name was provided.
 
 -t/--orf_style <string>  only to output the orfs which style is given, the style contain "complete", "3primer_partial", "5primer_partial" and "internal". More than one style is required, string should by splitted by comma.(default:"complete,3primer_partial,5primer_partial,internal")
 """
