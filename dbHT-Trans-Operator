@@ -1,0 +1,155 @@
+#!/usr/bin/python2.7
+#encoding:utf-8
+import os,sys,getopt
+from sys import path
+path.append(sys.path[0]+"/model/")
+import db_construct
+import config
+import time
+import commands
+if __name__=='__main__':
+    usage='''
+usage: dbHT-Trans-operate [option(s)] -T <*.fasta> -d <.*fasta>
+
+-h/--help 
+
+Note: this module will not output any result.
+
+#########################################################
+Required:
+
+-T/--transcript  <fasta>  the inputted fasta file that contains all transcript sequences.
+
+-d/--database <fasta>  the reference protein database used for homologous search.
+
+#########################################################
+Optional:
+
+-G/--genetic_code <string>  genetic code (default: universal, options: Euplotes, Tetrahymena, Candida).
+
+-g/--gene_list <table file>  a list for denoting the match between transcript and gene. The first column is for transcript name, second column for gene name, transcript name and gene name should not include '>'.
+
+-L/--min_orfs <int> retain ORFs found that are equal or longer than these many nucleotides (default: 300bp).
+
+-p/--processes  default:2
+
+#########################################################
+Advanced:
+
+-a/--identity <float>  the lowest identity threshold of homologous search (default:0.5). All of these primary transcripts will be subjected to further filtering in 'dbHT-Trans-export-results' step.
+
+-q/--query_cov <float>  the lowest query coverage threshold of homologous search (default:0.5). All of these primary transcripts will be subjected to further filtering in 'dbHT-Trans-export-results' step.
+'''
+    opts,arg=getopt.getopt(sys.argv[1:],"hT:g:G:L:a:q:d:p:",['help','transcript=','gene_list=','genetic_code=','min_orfs=','identity=','query_cov=','database=','processes=',])
+    parameters=[a[0] for a in opts]
+    if '-h' in parameters or '--help' in parameters:
+        print usage
+        sys.exit(1)
+    if len(parameters)==0:
+        print usage
+        sys.exit(1)
+    if '-T' not in parameters and '--transcript' not in parameters:
+        print "***Error, a transcripts file is requested.***\n"
+        print usage
+        sys.exit(1)
+    if '-d' not in parameters and '--database' not in parameters:
+        print "***Error, a database file is requested.***\n"
+        print usage
+        sys.exit(1)
+    #defualt value
+    genetic_code='universal'
+    shortest_orf=300
+    identify=0.5
+    coverage=0.5
+    process_num=2
+    gene_list=False
+    transcript=False
+    for i,a in opts:
+       #import sequence
+        if i in ("-T","--transcript"):
+            transcript=a
+        if i in ("-g","--gene_list"):
+            gene_list=a
+       #find ORFs
+        if i in ("-G","--genetic_code"):
+            genetic_code=a
+        if i in ('-L','--min_orfs'):
+            shortest_orfs=int(a)
+       #Alignment
+        if i in ('-d','--database'):
+            database=a
+        if i in ('-a','--identiy'):
+            identify=float(a)
+        if i in ('-q','--query_cov'):
+            coverage=float(a)
+        if i in ('-p','--processes'):
+            process_num=int(a)
+    #script location
+    script_loc=os.path.split(os.path.realpath(sys.argv[0]))[0]
+    #import sequence
+    script_start=time.time()
+    if os.path.isfile(database):
+        pass
+    else:
+        print "***%s is not found***"%(database)
+        sys.exit(1)
+    if os.path.isfile(transcript):
+        pass
+    else:
+        print "***%s is not found***"%(transcript)
+        sys.exit(1)
+    if '-g' in parameters:
+        if os.path.isfile(gene_list):
+            pass
+        else:
+            print "***%s is not found***"%(gene_list)
+            sys.exit(1)
+    else:
+        pass
+    if '-T' not in parameters and '--transcript' not in parameters:
+        print '****error, transcript file must be given!*******'
+        print usage
+        sys.exit(1)
+    reset_main_command="python %s/model/cancel_operation.py -t %s" %(script_loc,'sequence')
+    commands.getoutput(reset_main_command)
+    print " -> Input sequences into mysql..."
+    if os.path.isfile(script_loc+"/model/lock.txt"):
+        os.remove(script_loc+"/model/lock.txt")
+    if gene_list:
+        import_seq_command="python %s/model/sequence_import.py -i %s -g %s" %(script_loc,transcript,gene_list)
+        commands.getoutput(import_seq_command)
+        lock_file=script_loc+"/model/lock.txt"
+        fopen_lock=open(lock_file,'w')
+        fopen_lock.write(str(1))
+    else:
+        import_seq_command="python %s/model/sequence_import.py -i %s" %(script_loc,transcript)
+        commands.getoutput(import_seq_command)
+        lock_file=script_loc+"/model/lock.txt"
+        fopen_lock=open(lock_file,'w')
+        fopen_lock.write(str(0))
+    #find orfs
+    print " -> Find ORFs..."
+    find_orfs_command="python %s/model/orf_finder.py -l %d -g %s" % (script_loc,int(shortest_orf),genetic_code)
+    print commands.getoutput(find_orfs_command)
+    orf_time=time.time()
+    minute=int((orf_time-script_start)/60)
+    second=int(orf_time-script_start)%60
+    print "time for ORFs find: %dm%ds" %(minute,second)
+
+    #alignment
+    print " -> Align to database..."
+    alignment_command="python %s/model/usearch_protein2db.py -i %f -c %f -d %s -p %d" %(script_loc,identify,coverage,database,process_num)
+    print commands.getoutput(alignment_command)
+    search_time=time.time()
+    minute=int((search_time-orf_time)/60)
+    second=int(search_time-orf_time)%60
+    print "time for homologous search: %dm%ds (processes:%d)" %(minute,second,process_num)
+
+    #completed
+    print "operation completed, please to execute \"dbHT-Trans-Extractor\" for results."
+    remove_intermediate_file=r"rm -rf "+script_loc+r"/model/tmp* "
+    commands.getoutput(remove_intermediate_file)
+    final_time=time.time()
+    minute=int((final_time-script_start)/60)
+    second=int(final_time-script_start)%60
+    print "total time: %dm%ds" %(minute,second)

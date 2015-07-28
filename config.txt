@@ -1,0 +1,5 @@
+host=localhost
+username=root
+password=123456
+database=dbht_trans
+port=3306

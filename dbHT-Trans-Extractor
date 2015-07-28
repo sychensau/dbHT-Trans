@@ -1,0 +1,113 @@
+#!/usr/bin/python2.7
+import commands,os
+import sys,getopt
+from sys import path
+path.append(sys.path[0]+"/model/")
+path.append(sys.path[0])
+import config
+import db_operation
+import db_construct
+
+usage="""
+
+usage: dbHT-Trans-export-Extractor [option] -i <float> -c <float> -T <string>
+
+-h/--help
+
+#########################################################
+Required:
+
+-i/--ident <float>  the customer threshold of sequence identity for filtering transcripts. This value should be not lower than the lowest threshold of sequence identity for USEARCH tool's homologous search of "dbHT-Trans-Operator". (default:0.5)
+
+-c/--cov <float>  the customer threshold of query coverage (=alignment length / query length) for filtering transcripts. This value should be not lower than the lowest threshold of query coverage for USEARCH tool's homologous search of "dbHT-Trans-Operator".(default:0.5)
+
+-T/--transcript_prefix <filename>  to denote the file name's prefix for the two output files, which contain the retained transcripts and discarded transcripts, respectively. (default: "transcript")
+
+#########################################################
+Optional:
+
+-S/--stat <filename>  to output the results of statistical comparison before and after dbHT-Trans filtering.
+
+-M/--meta_table <filename>  to output the metadata for these retained transcripts, such as the information of target sequences of homologous search.
+
+-C/--cds_file <filename>   to output cds sequences for these retained transcripts. 
+
+-p/--protein_file <filename>  to output protein sequences for these retained transcripts.
+
+-F/--filtered_gene <filename>   to output all genes which don¡¯t have any transcript finally retained by ¡®dbHT-Trans-Extractor¡¯. This function is only available when the match list between transcript name and gene name was provided.
+
+-t/--orf_style <string>  only to output the orfs which style is given, the style contain "complete", "3primer_partial", "5primer_partial" and "internal". More than one style is required, string should by splitted by comma.(default:"complete,3primer_partial,5primer_partial,internal")
+"""
+opts,arg=getopt.getopt(sys.argv[1:],"C:P:M:T:S:F:i:c:t:",["cds_file=","protein_file=","meta_table=","transcript_prefix=","stat=","filtered_gene=","ident=","cov=","orf_style="])
+parameters=[a[0] for a in opts]
+if '-h' in parameters or '--help' in parameters:
+    print usage
+    sys.exit(1)
+if len(parameters)==0:
+    print usage
+    sys.exit(1)
+cds=False
+protein=False
+meta_table=False
+transcript=False
+stat=False
+fltered_gene=False
+coverage=0.5
+ident=0.5
+orf_style="False"
+for i,a in opts:
+    if i in ("-C","--cds_file"):
+        cds=a
+    if i in ("-P","--protein_file"):
+        protein=a
+    if i in ("-M","--meta_table"):
+        meta_table=a
+    if i in ("-T","--transcript_prefix"):
+        transcript=a
+    if i in ("-S","--stat"):
+        stat=a
+    if i in ("-F","--filtered_gene"):
+        fltered_gene=a
+    if i in ("-c","--cov"):
+        coverage=a
+    if i in ("-i","--ident"):
+        ident=a
+    if i in ("-t","--orf_style"):
+        orf_style=a
+#mysql infomation
+host=config.host
+user=config.username
+pw=config.password
+db=config.db
+connection=db_construct.create_conn_db(host,user,pw,db)
+#
+script_loc=os.path.split(os.path.realpath(sys.argv[0]))[0]
+if cds and not protein:
+    cds_file=db_operation.cds_final(connection,cds,float(ident),float(coverage))
+if cds and protein:
+    cds_file=db_operation.cds_final(connection,cds,float(ident),float(coverage))
+    protein_command="python %s/model/standard_code.py -i %s -o %s" %(script_loc,cds_file,protein)
+    commands.getoutput(protein_command)
+if not cds and protein:
+    cds_path=protein+r'.cds'
+    cds_file=db_operation.cds_final(connection,cds_path,float(ident),float(coverage))
+    protein_command="python %s/model/standard_code.py -i %s -o %s" %(script_loc,cds_file,protein)
+    commands.getoutput(protein_command)
+    os.remove(cds_path)
+if meta_table:
+    meta_command="python %s/model/btable.py -o %s -c %f -i %f -t %s" %(script_loc,meta_table,float(coverage),float(ident),orf_style)
+    commands.getoutput(meta_command)
+    print "  -> Meta table have been created successfully!"
+if transcript:
+    if True:
+        transcript_out_command="python %s/model/result_transcript_sequence.py -o %s -c %f -i %f -t %s" %(script_loc,transcript,float(coverage),float(ident),orf_style)
+        print commands.getoutput(transcript_out_command)
+        print "  -> Transcripts sequence output completed!"
+if stat:
+    transcript_stat="python %s/model/result_stat.py -o %s -c %f -i %f -t %s" %(script_loc,stat,float(coverage),float(ident),orf_style)
+    commands.getoutput(transcript_stat)
+    print "  -> transcript of this statistic is complete!"
+if fltered_gene:
+    filtered_gene="python %s/model/gene_filtered.py -o %s -c %f -i %f -t %s" %(script_loc,fltered_gene,float(coverage),float(ident),orf_style)
+    commands.getoutput(filtered_gene)
+    print "  -> filtered genes' list export completed!"
